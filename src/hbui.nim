@@ -11,14 +11,18 @@ from gdk2 import TScreen, TRectangle
 
 nim_init()
 
+type
+  UI = object
+    window: PWindow
+    vbox: PBox
+    buttons: seq[PWidget]
+    tray_icon: PStatusIcon
+    tray_menu: PMenu
+    tray_menu_quit: PMenuItem
+
 var
   accessories: Accessories
-  window: PWindow
-  buttons: seq[PWidget]
-  tray_icon: PStatusIcon
-  tray_menu: PMenu
-  tray_menu_quit: PMenuItem
-  vbox: PBox
+  ui: UI
 
 proc destroy(widget: PWidget, data: Pgpointer) {.cdecl.} =
   main_quit()
@@ -45,13 +49,13 @@ proc click_accessory(widget: PWidget, accessory: var Accessory) {.cdecl.} =
 proc set_accessories*(a: Accessories) =
   accessories = a
 
-  vbox = vbox_new(true, accessories.len.gint)
+  ui.vbox = vbox_new(true, accessories.len.gint)
   for accessory in accessories:
     if accessory.`type` != "Lightbulb":
       continue
     let label = cstring(accessory.light_label())
     var button = button_new(label)
-    buttons.add button
+    ui.buttons.add button
     discard button.signal_connect(
       "clicked",
       SIGNAL_FUNC(hbui.click_accessory),
@@ -59,70 +63,78 @@ proc set_accessories*(a: Accessories) =
     )
 
 proc hide() {.cdecl.} =
-  window.hide()
+  ui.window.hide()
 
-proc tray_rect(): TRectangle =
+proc rect(tray_icon: PStatusIcon): TRectangle =
   var
     scn: gdk2.TScreen
     rect: TRectangle
     ori: TOrientation
     width, height: gint
-
   discard tray_icon.status_icon_get_geometry(scn.addr, rect.addr, ori.addr)
   return rect
 
-proc tray_activate() {.cdecl.} =
-  if window.is_active():
-    hide()
+proc popup_menu_pos(menu: PMenu, x: Pgint, y: Pgint, push_in: Pgboolean, data: gpointer) {.cdecl.} =
+  let ui = cast[ref UI](data)
+  let rect = ui.tray_icon.rect()
+  x[] = rect.x
+  y[] = rect.y + rect.height
+
+proc popup_menu(tray_icon: PStatusIcon, button: guint, activate_time: guint32, ui: ref UI) {.cdecl.} =
+  ui.tray_menu.popup(nil, nil, status_icon_position_menu, tray_icon, button, activate_time)
+
+proc tray_activate(tray_icon: PStatusIcon, ui: ref UI) {.cdecl,gcsafe.} =
+  if ui.window.is_active():
+    ui.window.hide()
     return
 
   var
     rect: TRectangle
     width, height: gint
 
-  rect = tray_rect()
+  rect = ui.tray_icon.rect()
 
-  window.show_all()
-  window.get_size(width.addr, height.addr)
+  ui.window.show_all()
+  ui.window.get_size(width.addr, height.addr)
 
-  window.move(rect.x - width + rect.width, rect.y + rect.height)
-  window.present()
+  ui.window.move(rect.x - width + rect.width, rect.y + rect.height)
+  ui.window.present()
 
-proc popup_menu_pos(menu: PMenu, x: Pgint, y: Pgint, push_in: Pgboolean, user_data: gpointer) {.cdecl.} =
-  let rect = tray_rect()
-  x[] = rect.x
-  y[] = rect.y + rect.height
+proc setup_tray(ui: var UI) =
+  var pixbuf = pixbuf_new_from_xpm_data(cast[PPchar](hbpanel_xpm.addr))
+  ui.tray_icon = status_icon_new()
+  ui.tray_icon.status_icon_set_from_pixbuf(pixbuf)
+  ui.tray_menu = menu_new()
+  ui.tray_menu_quit = menu_item_new("Quit")
+  ui.tray_menu.menu_append ui.tray_menu_quit
+  ui.tray_menu_quit.show()
 
-proc popup_menu {.cdecl.} =
-  #tray_icon.status_icon_position_menu(0, 0)
-  tray_menu_quit.show()
-  tray_menu.popup(nil, nil, popup_menu_pos, nil, 0, get_current_event_time())
-  #status_icon_position_menu(tray_menu, 0, 0, true, nil)
+  let uiptr = cast[pointer](ui.addr)
+  discard ui.tray_icon.g_signal_connect("activate", G_CALLBACK(hbui.tray_activate), uiptr)
+  discard ui.tray_icon.g_signal_connect("popup_menu", G_CALLBACK(hbui.popup_menu), uiptr)
+  discard ui.tray_menu_quit.signal_connect("activate", SIGNAL_FUNC(hbui.destroy), nil)
+
+  ui.tray_icon.status_icon_set_visible(true)
+
+proc setup_panel(ui: var UI) =
+  const title: cstring = "Accessories"
+  ui.window = window_new(WINDOW_TOPLEVEL)
+  ui.window.set_skip_taskbar_hint(true)
+  ui.window.set_resizable(false)
+  ui.window.set_decorated(false)
+  ui.window.set_title(title)
+
+  for button in ui.buttons:
+    ui.vbox.pack_start(button, false, false, 0)
+  PContainer(ui.window).add ui.vbox
+
+  discard ui.window.signal_connect("destroy", SIGNAL_FUNC(hbui.destroy), nil)
+  discard ui.window.signal_connect("focus_out_event", SIGNAL_FUNC(hbui.hide), nil)
+
+proc setup(ui: var UI) =
+  ui.setup_tray()
+  ui.setup_panel()
 
 proc gui_main* =
-  const title: cstring = "Accessories"
-  var pixbuf = pixbuf_new_from_xpm_data(cast[PPchar](hbpanel_xpm.addr))
-  tray_icon = status_icon_new()
-  tray_icon.status_icon_set_from_pixbuf(pixbuf)
-  tray_menu = menu_new()
-  tray_menu_quit = menu_item_new("Quit")
-  tray_menu.menu_append tray_menu_quit
-
-  window = window_new(WINDOW_TOPLEVEL)
-  window.set_resizable(false)
-  window.set_decorated(false)
-  #window.set_title(title)
-
-  for button in buttons:
-    vbox.pack_start(button, false, false, 0)
-
-  PContainer(window).add vbox
-
-  discard window.signal_connect("destroy", SIGNAL_FUNC(hbui.destroy), nil)
-  discard window.signal_connect("focus_out_event", SIGNAL_FUNC(hbui.hide), nil)
-  discard tray_icon.g_signal_connect("activate", hbui.tray_activate, nil)
-  discard tray_icon.g_signal_connect("popup_menu", hbui.popup_menu, nil)
-  discard tray_menu_quit.signal_connect("activate", SIGNAL_FUNC(hbui.destroy), nil)
-
-  tray_icon.status_icon_set_visible(true)
+  ui.setup()
   main()
