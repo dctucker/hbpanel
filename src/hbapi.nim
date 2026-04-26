@@ -32,8 +32,8 @@ type
 
   Accessories* = seq[Accessory]
 
-proc service*(accessory: var Accessory, svc_type: string): ServiceChar =
-  for svc in accessory.serviceCharacteristics.mitems():
+proc service*(accessory: Accessory, svc_type: string): ServiceChar =
+  for svc in accessory.serviceCharacteristics:
     if svc.`type` == svc_type:
       return svc
 
@@ -103,3 +103,7 @@ proc put_accessory*(unique_id, char_type, value: string): Accessory =
     }
   ))
   return response.body.parseJson().to(Accessory)
+
+proc get_accessories_layout* =
+  let response = hb_api(HttpGet, "accessories/layout")
+  echo response.body
