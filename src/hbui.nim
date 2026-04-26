@@ -16,6 +16,8 @@ var
   window: PWindow
   buttons: seq[PWidget]
   tray_icon: PStatusIcon
+  tray_menu: PMenu
+  tray_menu_quit: PMenuItem
   vbox: PBox
 
 proc destroy(widget: PWidget, data: Pgpointer) {.cdecl.} =
@@ -27,7 +29,7 @@ proc light_label(accessory: Accessory): string =
   let brightness = svc_bright.value.get().getInt()
   result =
     if svc_on.value.get().getInt() == 0:
-      accessory.serviceName
+      "  " & accessory.serviceName & "      "
     else:
       "💡" & accessory.serviceName & " (" & $brightness & ")"
 
@@ -56,7 +58,10 @@ proc set_accessories*(a: Accessories) =
       accessory.addr
     )
 
-proc tray_activate() {.cdecl.} =
+proc hide() {.cdecl.} =
+  window.hide()
+
+proc tray_rect(): TRectangle =
   var
     scn: gdk2.TScreen
     rect: TRectangle
@@ -64,6 +69,18 @@ proc tray_activate() {.cdecl.} =
     width, height: gint
 
   discard tray_icon.status_icon_get_geometry(scn.addr, rect.addr, ori.addr)
+  return rect
+
+proc tray_activate() {.cdecl.} =
+  if window.is_active():
+    hide()
+    return
+
+  var
+    rect: TRectangle
+    width, height: gint
+
+  rect = tray_rect()
 
   window.show_all()
   window.get_size(width.addr, height.addr)
@@ -71,18 +88,30 @@ proc tray_activate() {.cdecl.} =
   window.move(rect.x - width + rect.width, rect.y + rect.height)
   window.present()
 
-proc hide() {.cdecl.} =
-  window.hide()
+proc popup_menu_pos(menu: PMenu, x: Pgint, y: Pgint, push_in: Pgboolean, user_data: gpointer) {.cdecl.} =
+  let rect = tray_rect()
+  x[] = rect.x
+  y[] = rect.y + rect.height
+
+proc popup_menu {.cdecl.} =
+  #tray_icon.status_icon_position_menu(0, 0)
+  tray_menu_quit.show()
+  tray_menu.popup(nil, nil, popup_menu_pos, nil, 0, get_current_event_time())
+  #status_icon_position_menu(tray_menu, 0, 0, true, nil)
 
 proc gui_main* =
   const title: cstring = "Accessories"
   var pixbuf = pixbuf_new_from_xpm_data(cast[PPchar](hbpanel_xpm.addr))
   tray_icon = status_icon_new()
   tray_icon.status_icon_set_from_pixbuf(pixbuf)
+  tray_menu = menu_new()
+  tray_menu_quit = menu_item_new("Quit")
+  tray_menu.menu_append tray_menu_quit
 
   window = window_new(WINDOW_TOPLEVEL)
-  #window.set_resizable(false)
-  window.set_title(title)
+  window.set_resizable(false)
+  window.set_decorated(false)
+  #window.set_title(title)
 
   for button in buttons:
     vbox.pack_start(button, false, false, 0)
@@ -92,5 +121,8 @@ proc gui_main* =
   discard window.signal_connect("destroy", SIGNAL_FUNC(hbui.destroy), nil)
   discard window.signal_connect("focus_out_event", SIGNAL_FUNC(hbui.hide), nil)
   discard tray_icon.g_signal_connect("activate", hbui.tray_activate, nil)
+  discard tray_icon.g_signal_connect("popup_menu", hbui.popup_menu, nil)
+  discard tray_menu_quit.signal_connect("activate", SIGNAL_FUNC(hbui.destroy), nil)
+
   tray_icon.status_icon_set_visible(true)
   main()
