@@ -29,17 +29,28 @@ type
     uuid*: string
     `type`*, humanType*, serviceName*: string
     uniqueId*: string
+    values*: JsonNode
 
   Accessories* = seq[Accessory]
 
-proc service*(accessory: Accessory, svc_type: string): ServiceChar =
-  for svc in accessory.serviceCharacteristics:
-    if svc.`type` == svc_type:
-      return svc
+proc find_service(accessory: var Accessory, svc_type: string): int =
+  for i in 0..<accessory.serviceCharacteristics.len:
+    if accessory.serviceCharacteristics[i].`type` == svc_type:
+      return i
+
+proc service*(accessory: var Accessory, svc_type: string): var ServiceChar =
+  return accessory.serviceCharacteristics[accessory.find_service(svc_type)]
+
+proc service_value*(accessory: var Accessory, svc_type: string): JsonNode =
+  return accessory.values[svc_type]
+
+proc update*(accessory: var Accessory, updated_accessory: Accessory) =
+  accessory.serviceCharacteristics = updated_accessory.serviceCharacteristics
+  accessory.values = updated_accessory.values
 
 proc toggled_value*(svc: ServiceChar): string =
   case svc.format
-  of "uint8", "uint32", "bool":
+  of "int", "uint8", "uint32", "bool":
     return $(1 - svc.value.get().getInt())
   of "string":
     return svc.value.get().getStr()
@@ -95,7 +106,16 @@ proc get_accessories*: Accessories =
   let response = hb_api(HttpGet, "accessories")
   return response.body.parseJson().to(Accessories)
 
-proc put_accessory*(unique_id, char_type, value: string): Accessory =
+proc put_accessory*(unique_id, char_type: string, value: string): Accessory =
+  let response = hb_api(HttpPut, "accessories/" & unique_id, $(%*
+    {
+      "characteristicType": char_type,
+      "value": value,
+    }
+  ))
+  return response.body.parseJson().to(Accessory)
+
+proc put_accessory*(unique_id, char_type: string, value: int): Accessory =
   let response = hb_api(HttpPut, "accessories/" & unique_id, $(%*
     {
       "characteristicType": char_type,

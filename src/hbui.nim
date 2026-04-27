@@ -30,6 +30,8 @@ type
     buttons: seq[PWidget]
     dragging: ptr Accessory
     dragged: bool
+    updating: bool
+    prev_coords: tuple[x: gdouble, y: gdouble]
     tray: Tray
 
 const title: cstring = "Homebridge"
@@ -37,19 +39,18 @@ var
   accessories: Accessories
   ui: UI
 
-proc light_label(accessory: Accessory): string =
-  let svc_on = accessory.service("On")
-  let svc_bright = accessory.service("Brightness")
-  let brightness = svc_bright.value.get().getInt()
-  result =
-    if svc_on.value.get().getInt() == 0:
+proc light_label(accessory: var Accessory): cstring =
+  let brightness = accessory.service_value("Brightness").getInt()
+  let on = accessory.service_value("On").getInt()
+  result = cstring(
+    if on == 0:
       "\n" & accessory.serviceName & "\n"
     else:
       "💡\n" & accessory.serviceName & "\n" & $brightness & "%"
+  )
 
-proc light_button(accessory: Accessory): PButton =
-  let label = cstring(accessory.light_label())
-  var button = button_new(label)
+proc light_button(accessory: var Accessory): PButton =
+  var button = button_new(accessory.light_label())
   var value: TGValue
   var pvalue: PGValue
   pvalue = value.addr.init(G_TYPE_BOOLEAN)
@@ -57,32 +58,56 @@ proc light_button(accessory: Accessory): PButton =
   PWidget(button).add_events(gint(BUTTON_PRESS_MASK + POINTER_MOTION_MASK + BUTTON_RELEASE_MASK))
 
   discard button.signal_connect("button-press-event", SIGNAL_FUNC(
-    proc(widget: PWidget, event: PEventButton, data: var Accessory) {.cdecl.} =
+    proc(widget: PWidget, event: PEventButton, accessory: var Accessory): bool {.cdecl.} =
       ui.dragged = false
-      ui.dragging = data.addr
+      ui.dragging = accessory.addr
+      ui.prev_coords = (event.x, event.y)
+      return true
     ),
     accessory.addr
   )
 
   discard button.signal_connect("motion-notify-event", SIGNAL_FUNC(
-    proc(widget: PWidget, event: PEventMotion, data: var Accessory) {.cdecl.} =
-      if ui.dragging == data.addr:
-        ui.dragged = true
-        #echo data.serviceName, ": ", $event.x, ",", $event.y
+    proc(widget: PWidget, event: PEventMotion, accessory: var Accessory): bool {.cdecl.} =
+      if ui.dragging != accessory.addr:
+        return false
+      result = true
+
+      ui.dragged = true
+      let dy = (ui.prev_coords.y - event.y).int
+      ui.prev_coords = (event.x, event.y)
+
+      if dy == 0:
+        return
+
+      const svc_type = "Brightness"
+      let new_value = accessory.service_value(svc_type).getInt() + dy
+
+      #svc.value = some(newJInt(new_value))
+      #PButton(widget).set_label(accessory.light_label())
+
+      if ui.updating:
+        return
+
+      ui.updating = true
+      let updated_accessory = put_accessory(accessory.uniqueId, svc_type, new_value)
+      #echo $updated_accessory.values
+      accessory.update(updated_accessory)
+      PButton(widget).set_label(accessory.light_label())
+      ui.updating = false
     ),
     accessory.addr
   )
 
   discard button.signal_connect("button-release-event", SIGNAL_FUNC(
-    proc(widget: PWidget, event: PEventButton, accessory: var Accessory) {.cdecl.} =
+    proc(widget: PWidget, event: PEventButton, accessory: var Accessory): bool {.cdecl.} =
       if not ui.dragged:
         const svc_type = "On"
-        var svc = accessory.service(svc_type)
-        let new_value = svc.toggled_value()
+        let new_value = 1 - accessory.service_value(svc_type).getInt()
         let updated_accessory = put_accessory(accessory.uniqueId, svc_type, new_value)
-        accessory.serviceCharacteristics = updated_accessory.serviceCharacteristics
-        let label = accessory.light_label()
-        PButton(widget).set_label(cstring(label))
+        accessory.update(updated_accessory)
+        PButton(widget).set_label(accessory.light_label())
+        result = true
       ui.dragging = nil
     ),
     accessory.addr
@@ -94,7 +119,7 @@ proc set_accessories*(a: Accessories) =
   accessories = a
 
   ui.vbox = vbox_new(true, accessories.len.gint)
-  for accessory in accessories:
+  for accessory in accessories.mitems():
     if accessory.`type` != "Lightbulb":
       continue
     ui.buttons.add light_button(accessory)
@@ -107,7 +132,6 @@ proc rect(tray: Tray): TRectangle =
     scn: gdk2.TScreen
     rect: TRectangle
     ori: TOrientation
-    width, height: gint
   discard tray.icon.status_icon_get_geometry(scn.addr, rect.addr, ori.addr)
   return rect
 
