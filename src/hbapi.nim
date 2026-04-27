@@ -48,15 +48,6 @@ proc update*(accessory: var Accessory, updated_accessory: Accessory) =
   accessory.serviceCharacteristics = updated_accessory.serviceCharacteristics
   accessory.values = updated_accessory.values
 
-proc toggled_value*(svc: ServiceChar): string =
-  case svc.format
-  of "int", "uint8", "uint32", "bool":
-    return $(1 - svc.value.get().getInt())
-  of "string":
-    return svc.value.get().getStr()
-  else:
-    return ""
-
 const token_file = getCacheDir("hbpanel") / "token.json"
 let base_url = "http://homebridge.local:8581"
 let headers = newHttpHeaders()

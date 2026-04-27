@@ -26,7 +26,7 @@ type
     menu_items: seq[PMenuItem]
   UI = object
     panel: PWindow
-    vbox: PBox
+    table: PTable
     buttons: seq[PWidget]
     dragging: ptr Accessory
     dragged: bool
@@ -118,7 +118,6 @@ proc light_button(accessory: var Accessory): PButton =
 proc set_accessories*(a: Accessories) =
   accessories = a
 
-  ui.vbox = vbox_new(true, accessories.len.gint)
   for accessory in accessories.mitems():
     if accessory.`type` != "Lightbulb":
       continue
@@ -187,10 +186,19 @@ proc setup_panel(ui: var UI) =
   ui.panel.set_resizable(false)
   ui.panel.set_decorated(false)
   ui.panel.set_title(title)
+  ui.panel.set_border_width(10)
 
+  ui.table = table_new((1 + ui.buttons.len.guint) div 2, 2, true)
+  ui.table.set_row_spacings(8)
+  ui.table.set_col_spacings(8)
+  var i, j: guint
   for button in ui.buttons:
-    ui.vbox.pack_start(button, false, false, 0)
-  PContainer(ui.panel).add ui.vbox
+    ui.table.attach_defaults(button, j, j+1, i, i+1)
+    j += 1
+    if j >= 2:
+      j = 0
+      i += 1
+  PContainer(ui.panel).add ui.table
 
   let uiptr = cast[pointer](ui.addr)
   discard ui.panel.signal_connect("destroy",         SIGNAL_FUNC(destroy), uiptr)
