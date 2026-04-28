@@ -25,6 +25,8 @@ type
     menu: PMenu
     menu_items: seq[PMenuItem]
   UI = object
+    api: API
+    timer: guint
     panel: PWindow
     table: PTable
     buttons: seq[PWidget]
@@ -32,6 +34,7 @@ type
     dragged: bool
     updating: bool
     prev_coords: tuple[x: gdouble, y: gdouble]
+    next_update: Option[JsonNode]
     tray: Tray
 
 const title: cstring = "Homebridge"
@@ -75,26 +78,21 @@ proc light_button(accessory: var Accessory): PButton =
 
       ui.dragged = true
       let dy = (ui.prev_coords.y - event.y).int
+      if dy.abs < 2:
+        return
       ui.prev_coords = (event.x, event.y)
 
-      if dy == 0:
-        return
-
       const svc_type = "Brightness"
-      let new_value = accessory.service_value(svc_type).getInt() + dy
+      let service = accessory.service(svc_type)
+      let max_value = service.maxValue.get()
+      let min_value = service.minValue.get()
+      let value = accessory.values[svc_type].getInt() #service.value.get().getInt()
+      let new_value = (value + dy div 2).min(max_value).max(min_value)
 
-      #svc.value = some(newJInt(new_value))
-      #PButton(widget).set_label(accessory.light_label())
-
-      if ui.updating:
-        return
-
-      ui.updating = true
-      let updated_accessory = put_accessory(accessory.uniqueId, svc_type, new_value)
-      #echo $updated_accessory.values
-      accessory.update(updated_accessory)
+      accessory.values[svc_type] = newJInt(new_value)
       PButton(widget).set_label(accessory.light_label())
-      ui.updating = false
+
+      ui.next_update = some(put_accessory_json(svc_type, new_value))
     ),
     accessory.addr
   )
@@ -104,7 +102,7 @@ proc light_button(accessory: var Accessory): PButton =
       if not ui.dragged:
         const svc_type = "On"
         let new_value = 1 - accessory.service_value(svc_type).getInt()
-        let updated_accessory = put_accessory(accessory.uniqueId, svc_type, new_value)
+        let updated_accessory = ui.api.put_accessory(accessory.uniqueId, svc_type, new_value)
         accessory.update(updated_accessory)
         PButton(widget).set_label(accessory.light_label())
         result = true
@@ -115,7 +113,7 @@ proc light_button(accessory: var Accessory): PButton =
 
   return button
 
-proc set_accessories*(a: Accessories) =
+proc set_accessories*(ui: var UI, a: Accessories) =
   accessories = a
 
   for accessory in accessories.mitems():
@@ -204,10 +202,25 @@ proc setup_panel(ui: var UI) =
   discard ui.panel.signal_connect("destroy",         SIGNAL_FUNC(destroy), uiptr)
   discard ui.panel.signal_connect("focus_out_event", SIGNAL_FUNC(hide)   , uiptr)
 
+proc timer_proc(ui: var UI): gboolean {.cdecl,gcsafe.} =
+  if ui.next_update.isSome:
+    let json = ui.next_update.get()
+    ui.next_update = none(JsonNode)
+    var accessory = ui.dragging[]
+    let updated_accessory = ui.api.put_accessory(accessory.uniqueId, json)
+    accessory.update(updated_accessory)
+  return true
+
+proc setup_timer(ui: var UI) =
+  ui.timer = timeout_add(500, cast[TFunction](timerproc), ui.addr)
+
 proc setup(ui: var UI) =
   ui.setup_tray()
   ui.setup_panel()
+  ui.setup_timer()
 
 proc gui_main* =
+  ui.api = newAPI()
+  ui.set_accessories(ui.api.fetch_accessories())
   ui.setup()
   main()
