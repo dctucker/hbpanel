@@ -13,7 +13,7 @@ type
     base_url: string
     headers: HttpHeaders
 
-  ServiceChar = object
+  ServiceChar* = object
     aid*, iid*: int
     uuid*, `type`*, serviceType*, serviceName*, description*: string
     perms*: seq[string]
@@ -35,6 +35,8 @@ type
     values*: JsonNode
 
   Accessories* = seq[Accessory]
+
+proc `$`*[T](opt: Option[T]): string = $opt.get()
 
 proc find_service(accessory: var Accessory, svc_type: string): int =
   for i in 0..<accessory.serviceCharacteristics.len:

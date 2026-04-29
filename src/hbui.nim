@@ -17,8 +17,6 @@ from gdk2 import
   BUTTON_RELEASE_MASK,
   POINTER_MOTION_MASK
 
-nim_init()
-
 type
   Tray = object
     icon: PStatusIcon
@@ -220,6 +218,7 @@ proc setup(ui: var UI) =
   ui.setup_timer()
 
 proc gui_main* =
+  nim_init()
   ui.api = newAPI()
   ui.set_accessories(ui.api.fetch_accessories())
   ui.setup()

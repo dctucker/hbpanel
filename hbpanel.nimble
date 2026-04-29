@@ -6,7 +6,7 @@ description   = "HomeBridge panel"
 license       = "MIT"
 srcDir        = "src"
 binDir        = "bin"
-bin           = @["hbpanel"]
+bin           = @["hb"]
 
 
 # Dependencies
