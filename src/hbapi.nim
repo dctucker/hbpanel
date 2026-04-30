@@ -4,6 +4,7 @@ import
     os,
     httpclient,
     #asyncdispatch,
+    strutils,
     tables,
     options,
   ]
@@ -12,6 +13,8 @@ type
   API* = object
     base_url: string
     headers: HttpHeaders
+
+  Value* = string | BiggestInt | float | bool
 
   ServiceChar* = object
     aid*, iid*: int
@@ -131,7 +134,7 @@ proc get_accessories*(api: API): Accessories =
   let response = api.call(HttpGet, "accessories")
   return response.body.parseJson().to(Accessories)
 
-proc put_accessory_json*[T: string | int](char_type: string, value: T): JsonNode =
+proc put_accessory_json*[T](char_type: string, value: T): JsonNode =
   %* {
     "characteristicType": char_type,
     "value": value,
@@ -141,8 +144,24 @@ proc put_accessory*(api: API, unique_id: string, json: JsonNode): Accessory =
   let response = api.call(HttpPut, "accessories/" & unique_id, $json)
   return response.body.parseJson().to(Accessory)
 
-proc put_accessory*[T](api: API, unique_id, char_type: string, value: T): Accessory =
+proc put_accessory*[T: Value](api: API, unique_id, char_type: string, value: T): Accessory =
   return api.put_accessory(unique_id, put_accessory_json(char_type, value))
+
+proc put_accessory*(api: API, unique_id, char_type: string, value: JsonNode): Accessory =
+  return api.put_accessory(unique_id, put_accessory_json(char_type, value))
+
+proc put*(api: API, accessory: Accessory, char_type: string, val: string): Accessory =
+  let id = accessory.uniqueId
+  let value: JsonNode = case accessory.values[char_type].kind
+  of JFloat: %(val.parseFloat())
+  of JInt: %(val.parseInt())
+  of JBool: %(val.parseBool())
+  of JNull: %nil
+  of JString: %($val)
+  else:
+    stderr.write "Unsupported type for PUT accessories/", id, "\n"
+    %val
+  api.put_accessory(id, char_type, value)
 
 proc get_layout*(api: API): Layout =
   let response = api.call(HttpGet, "accessories/layout")

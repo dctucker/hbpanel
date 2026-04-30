@@ -1,12 +1,14 @@
 import
   std/[
     json,
-    parseopt,
     strformat,
     sequtils,
     tables
   ],
-  ./hbapi
+  ./[
+    hbapi,
+    flags
+  ]
 
 const USAGE_MESSAGE = """
 Usage: hb [flags] [accessory] [key] [value]
@@ -27,18 +29,8 @@ ENVIRONMENT VARIABLES
 """
 
 type
-  CLI* = object
+  CLI* = object of Flags
     api: API
-    args: Args
-    list*, layout*, panel*, tray*, verbose*, usage*: bool
-
-  Args = tuple
-    accessory, service, value: string
-
-converter toArgs(args: seq[string]): Args =
-  if args.len > 0: result.accessory = args[0]
-  if args.len > 1: result.service = args[1]
-  if args.len > 2: result.value = args[2]
 
 proc find(haystack: Accessories, needle: string): ptr Accessory =
   for accessory in haystack:
@@ -66,6 +58,10 @@ proc list(cli: CLI, services: seq[ServiceChar]) =
     if cli.verbose:
       stdout.write " = ", $service.value
     stdout.write "\n"
+
+proc do_put(cli: CLI, accessory: Accessory): int =
+  let accessory_id = accessory.uniqueId
+  discard cli.api.put(accessory, cli.args.service, cli.args.value)
 
 proc do_list(cli: CLI): int =
   let accessories = cli.api.fetch_accessories()
@@ -95,8 +91,7 @@ proc do_list(cli: CLI): int =
     stdout.write service.value, "\n"
     return
 
-  let accessory_id = accessory.uniqueId
-  discard cli.api.put_accessory(accessory_id, cli.args.service, cli.args.value)
+  cli.do_put(accessory[])
 
 proc do_layout(cli: CLI): int =
   let layout = cli.api.fetch_layout()
@@ -116,31 +111,7 @@ proc do_usage(cli: CLI): int =
   echo USAGE_MESSAGE
   return 2
 
-proc setup*(cli: var CLI) =
-  var args: seq[string]
-  var p = initOptParser()
-  for kind, key, value in p.getOpt():
-    case kind
-    of cmdArgument:
-      args.add key
-    of cmdShortOption, cmdLongOption:
-      case key
-      of "h", "help":
-        cli.usage = true
-      of "l", "list":
-        cli.list = true
-      of "L", "layout":
-        cli.layout = true
-      of "p", "panel":
-        cli.panel = true
-      of "t", "tray":
-        cli.tray = true
-      of "v", "verbose":
-        cli.verbose = true
-    of cmdEnd:
-      assert(false)
-  cli.list = true
-  cli.args = args
+export setup
 
 proc main*(cli: var CLI): int =
   cli.api = newAPI()

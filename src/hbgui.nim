@@ -1,12 +1,19 @@
 import
-  ./icon,
-  ./hbapi,
+  ./[
+    icon,
+    hbapi,
+    flags
+  ],
   glib2,
   gtk2,
   gdk2pixbuf,
-  gtkmacintegration,
-  json,
-  std/options
+  std/[
+    json,
+    options
+  ]
+
+when defined macos:
+  import gtkmacintegration
 
 from gdk2 import
   TScreen,
@@ -24,6 +31,7 @@ type
     menu: PMenu
     menu_items: seq[PMenuItem]
   UI = object
+    flags: Flags
     api: API
     timer: guint
     panel: PWindow
@@ -122,6 +130,8 @@ proc set_accessories*(ui: var UI, a: Accessories) =
 
 proc hide(window: PWindow, event: PEventFocus, ui: ref UI) {.cdecl.} =
   ui.panel.hide()
+  if ui.flags.panel:
+    main_quit()
 
 proc rect(tray: Tray): TRectangle =
   var
@@ -133,6 +143,10 @@ proc rect(tray: Tray): TRectangle =
 
 proc destroy(widget: PWidget, data: Pgpointer) {.cdecl.} =
   main_quit()
+
+proc show_panel(ui: var UI) =
+  ui.panel.show_all()
+  ui.panel.present()
 
 proc setup_tray(ui: var UI) =
   let uiptr = cast[pointer](ui.addr)
@@ -153,7 +167,7 @@ proc setup_tray(ui: var UI) =
   ui.tray.icon.status_icon_set_visible(true)
 
   discard ui.tray.icon.g_signal_connect("activate", G_CALLBACK(
-    proc(status_icon: PStatusIcon, ui: ref UI) {.cdecl,gcsafe.} =
+    proc(status_icon: PStatusIcon, ui: var UI) {.cdecl,gcsafe.} =
       if ui.panel.is_active():
         ui.panel.hide()
         return
@@ -162,10 +176,9 @@ proc setup_tray(ui: var UI) =
         width, height: gint
         rect: TRectangle = ui.tray.rect()
 
-      ui.panel.show_all()
+      ui.show_panel()
       ui.panel.get_size(width.addr, height.addr)
       ui.panel.move(rect.x - width + rect.width, rect.y + rect.height)
-      ui.panel.present()
     ),
     uiptr
   )
@@ -214,13 +227,20 @@ proc setup_timer(ui: var UI) =
   ui.timer = timeout_add(500, cast[TFunction](timerproc), ui.addr)
 
 proc setup(ui: var UI) =
-  ui.setup_tray()
   ui.setup_panel()
   ui.setup_timer()
 
-proc gui_main* =
+  if ui.flags.tray:
+    ui.setup_tray()
+
+  if ui.flags.panel:
+    ui.show_panel()
+
+proc gui_main*(flags: Flags) =
+  ui.flags = flags
   nim_init()
   ui.api = newAPI()
-  ui.set_accessories(ui.api.fetch_accessories())
+  let accessories = ui.api.fetch_accessories()
+  ui.set_accessories(accessories)
   ui.setup()
   main()
