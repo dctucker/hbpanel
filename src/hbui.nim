@@ -4,6 +4,7 @@ import
   glib2,
   gtk2,
   gdk2pixbuf,
+  gtkmacintegration,
   json,
   std/options
 

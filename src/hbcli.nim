@@ -1,8 +1,10 @@
 import
   std/[
+    json,
     parseopt,
     strformat,
-    sequtils
+    sequtils,
+    tables
   ],
   ./hbapi
 
@@ -11,6 +13,7 @@ Usage: hb [flags] [accessory] [key] [value]
 
 FLAGS
   -l, --list       List accessories or keys
+  -L, --layout     Show the accessories layout
   -p, --panel      Display the panel GUI
   -t, --tray       Launch as a system-tray icon
   -v, --verbose    Print verbose output
@@ -27,7 +30,7 @@ type
   CLI* = object
     api: API
     args: Args
-    list*, panel*, tray*, verbose*, usage*: bool
+    list*, layout*, panel*, tray*, verbose*, usage*: bool
 
   Args = tuple
     accessory, service, value: string
@@ -53,6 +56,7 @@ proc list(cli: CLI, accessories: Accessories) =
     stdout.write accessory.serviceName.alignString(len_1)
     if cli.verbose:
       stdout.write "  (", accessory.humanType, ")"
+      stdout.write " ", accessory.uniqueId
     stdout.write "\n"
 
 proc list(cli: CLI, services: seq[ServiceChar]) =
@@ -65,6 +69,9 @@ proc list(cli: CLI, services: seq[ServiceChar]) =
 
 proc do_list(cli: CLI): int =
   let accessories = cli.api.fetch_accessories()
+  if accessories.len == 0:
+    stderr.write "Unable to load accessories.\n"
+    return 1
 
   if cli.args.accessory.len == 0:
     cli.list accessories
@@ -86,9 +93,24 @@ proc do_list(cli: CLI): int =
 
   if cli.args.value.len == 0:
     stdout.write service.value, "\n"
+    return
 
   let accessory_id = accessory.uniqueId
-  let response = cli.api.put_accessory(accessory_id, cli.args.service, cli.args.value)
+  discard cli.api.put_accessory(accessory_id, cli.args.service, cli.args.value)
+
+proc do_layout(cli: CLI): int =
+  let layout = cli.api.fetch_layout()
+  let accessories: Table[string, Accessory] = cli.api.fetch_accessories()
+  for room in layout:
+    stdout.write room.name, "\n"
+    for svc in room.services:
+      if accessories.hasKey(svc.uniqueId):
+        let accessory = accessories[svc.uniqueId]
+        let name = accessory.serviceName
+        stdout.write "    ", name, "\n"
+      else:
+        continue
+  return
 
 proc do_usage(cli: CLI): int =
   echo USAGE_MESSAGE
@@ -107,6 +129,8 @@ proc setup*(cli: var CLI) =
         cli.usage = true
       of "l", "list":
         cli.list = true
+      of "L", "layout":
+        cli.layout = true
       of "p", "panel":
         cli.panel = true
       of "t", "tray":
@@ -122,5 +146,7 @@ proc main*(cli: var CLI): int =
   cli.api = newAPI()
   if cli.usage:
     return cli.do_usage()
+  if cli.layout:
+    return cli.do_layout()
   if cli.list:
     return cli.do_list()

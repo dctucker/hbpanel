@@ -1,13 +1,12 @@
 import ./[
-  hbcli,
-  hbui
+  hbcli#, hbui
 ]
 
 when isMainModule:
   var cli: CLI
   cli.setup()
 
-  if cli.tray:
-    gui_main()
-  else:
-    quit(cli.main())
+  #if cli.tray:
+  #  gui_main()
+  #else:
+  quit(cli.main())

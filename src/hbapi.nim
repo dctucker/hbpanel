@@ -36,7 +36,28 @@ type
 
   Accessories* = seq[Accessory]
 
-proc `$`*[T](opt: Option[T]): string = $opt.get()
+  AccessoryMap = Table[string, Accessory]
+
+  LayoutService* = object
+    uniqueId*: string
+    aid*, iid*: int
+    uuid*: string
+    onDashboard*: Option[bool]
+
+  Room* = object
+    name*: string
+    services*: seq[LayoutService]
+
+  Layout* = seq[Room]
+
+proc `$`*[T](opt: Option[T]): string =
+  if opt.isNone:
+    var t: T
+    return $t
+  return $opt.get()
+
+converter toAccessoryMap*(accessories: Accessories): AccessoryMap =
+  return accessories.indexBy(proc(accessory: Accessory): string = accessory.uniqueId)
 
 proc find_service(accessory: var Accessory, svc_type: string): int =
   for i in 0..<accessory.serviceCharacteristics.len:
@@ -54,7 +75,8 @@ proc update*(accessory: var Accessory, updated_accessory: Accessory) =
   accessory.values = updated_accessory.values
 
 
-const token_file = getCacheDir("hbpanel") / "token.json"
+const token_dir = getCacheDir("hbpanel")
+const token_file = token_dir / "token.json"
 
 proc newAPI*: API =
   const host = getEnv("HB_HOST", "homebridge.local")
@@ -73,6 +95,7 @@ proc call(api: API, mtd: HttpMethod, endpoint: string, data: string = ""): Respo
 
 proc read_token_cache*(api: API): bool =
   try:
+    createDir(token_dir)
     let token_json = readFile(token_file).parseJson()
     let access_token = token_json["access_token"].getStr()
     api.headers["Authorization"] = "Bearer " & access_token
@@ -93,8 +116,9 @@ proc auth_login*(api: API): bool =
     writeFile(token_file, response.body)
     return api.read_token_cache()
   else:
-    echo response.code
-    echo response.body
+    stderr.write response.code, "\n"
+    for message in response.body.parseJson(){"message"}:
+      stderr.write message.getStr(), "\n"
     return false
 
 proc auth_check*(api: API): bool =
@@ -120,12 +144,11 @@ proc put_accessory*(api: API, unique_id: string, json: JsonNode): Accessory =
 proc put_accessory*[T](api: API, unique_id, char_type: string, value: T): Accessory =
   return api.put_accessory(unique_id, put_accessory_json(char_type, value))
 
-proc get_accessories_layout*(api: API) =
+proc get_layout*(api: API): Layout =
   let response = api.call(HttpGet, "accessories/layout")
-  echo response.body
+  return response.body.parseJson().to(Layout)
 
-# attempts to login and fetch accessories
-proc fetch_accessories*(api: API): Accessories =
+proc attempt_login*(api: API): bool =
   if not api.read_token_cache():
     if not api.auth_login():
       return
@@ -133,6 +156,12 @@ proc fetch_accessories*(api: API): Accessories =
       if not api.auth_login():
         return
 
-  #get_accessories_layout()
+# attempts to login and fetch accessories
+proc fetch_accessories*(api: API): Accessories =
+  discard api.attempt_login()
   return api.get_accessories()
 
+# attempts to login and fetch accessories layout
+proc fetch_layout*(api: API): Layout =
+  discard api.attempt_login()
+  return api.get_layout()
