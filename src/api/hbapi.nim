@@ -11,7 +11,8 @@ import
 
 type
   API* = object
-    base_url: string
+    host: string
+    port: string
     headers: HttpHeaders
 
   Value* = string | BiggestInt | float | bool
@@ -82,17 +83,22 @@ proc token_dir(): string = getCacheDir("hbpanel")
 proc token_file(): string = token_dir() / "token.json"
 
 proc newAPI*: API =
-  const host = getEnv("HB_HOST", "homebridge.local")
-  const port = getEnv("HB_PORT", "8581")
-  result.base_url = "http://" & host & ":" & port
+  result.host = getEnv("HB_HOST", "homebridge.local")
+  result.port = getEnv("HB_PORT", "8581")
   result.headers = newHttpHeaders()
   result.headers["Content-type"] = "application/json"
   result.headers["accept"] = "*/*"
 
+proc base_url(api: API): string =
+  return "http://" & api.host & ":" & api.port
+
+proc url(api: API, endpoint: string): string =
+  return api.base_url & "/api/" & endpoint
+
 proc call(api: API, mtd: HttpMethod, endpoint: string, data: string = ""): Response =
   var client = newHttpClient(defUserAgent, headers=api.headers)
   try:
-    return client.request(api.base_url & "/api/" & endpoint, mtd, body=data)
+    return client.request(api.url(endpoint), mtd, body=data)
   finally:
     client.close()
 
@@ -119,9 +125,12 @@ proc auth_login*(api: API): bool =
     token_file().writeFile(response.body)
     return api.read_token_cache()
   else:
+    stderr.write "Unable to login at ", api.base_url
     stderr.write response.code, "\n"
     for message in response.body.parseJson(){"message"}:
       stderr.write message.getStr(), "\n"
+    if password.len == 0:
+      stderr.write "HB_PASS is unset, password is blank"
     return false
 
 proc auth_check*(api: API): bool =

@@ -1,6 +1,4 @@
-import ./[
-  hbflags, hbcli, hbgui
-]
+import ./hbflags, ./cli/hbcli, ./gui/hbgui
 
 when isMainModule:
   let flags = newFlags()

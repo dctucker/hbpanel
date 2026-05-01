@@ -1,9 +1,7 @@
 import
-  ./[
-    icon,
-    hbapi,
-    hbflags
-  ],
+  ../api/hbapi,
+  ../hbflags,
+  ./icon,
   glib2,
   gtk2,
   gdk2pixbuf,
@@ -59,6 +57,15 @@ proc light_label(accessory: var Accessory): cstring =
       "💡\n" & accessory.serviceName & "\n" & $brightness & "%"
   )
 
+proc on_signal(obj: PObject, sig: cstring, fn: TSignalFunc, data: gpointer) =
+  if signal_connect(obj, sig, fn, data) == 0:
+    stderr.write "Unable to connect signal " & $sig & "\n"
+
+proc on_signal(obj: PGObject, sig: cstring, fn: TGCallback, data: gpointer) =
+  if g_signal_connect(obj, sig, fn, data) == 0:
+    stderr.write "Unable to connect signal " & $sig & "\n"
+
+
 proc light_button(accessory: var Accessory): PButton =
   var button = button_new(accessory.light_label())
   var value: TGValue
@@ -67,7 +74,7 @@ proc light_button(accessory: var Accessory): PButton =
   button.set_property("can-focus", pvalue)
   PWidget(button).add_events(gint(BUTTON_PRESS_MASK + POINTER_MOTION_MASK + BUTTON_RELEASE_MASK))
 
-  discard button.signal_connect("button-press-event", SIGNAL_FUNC(
+  button.on_signal("button-press-event", SIGNAL_FUNC(
     proc(widget: PWidget, event: PEventButton, accessory: var Accessory): bool {.cdecl.} =
       ui.dragged = false
       ui.dragging = accessory.addr
@@ -77,7 +84,7 @@ proc light_button(accessory: var Accessory): PButton =
     accessory.addr
   )
 
-  discard button.signal_connect("motion-notify-event", SIGNAL_FUNC(
+  button.on_signal("motion-notify-event", SIGNAL_FUNC(
     proc(widget: PWidget, event: PEventMotion, accessory: var Accessory): bool {.cdecl.} =
       if ui.dragging != accessory.addr:
         return false
@@ -104,7 +111,7 @@ proc light_button(accessory: var Accessory): PButton =
     accessory.addr
   )
 
-  discard button.signal_connect("button-release-event", SIGNAL_FUNC(
+  button.on_signal("button-release-event", SIGNAL_FUNC(
     proc(widget: PWidget, event: PEventButton, accessory: var Accessory): bool {.cdecl.} =
       if not ui.dragged:
         const svc_type = "On"
@@ -157,7 +164,7 @@ proc setup_tray(ui: var UI) =
   ui.tray.menu = menu_new()
 
   var menu_quit = menu_item_new("Quit")
-  discard menu_quit.signal_connect("activate", SIGNAL_FUNC(destroy), uiptr)
+  menu_quit.on_signal("activate", SIGNAL_FUNC(destroy), uiptr)
   ui.tray.menu_items.add menu_quit
 
   for item in ui.tray.menu_items:
@@ -166,7 +173,7 @@ proc setup_tray(ui: var UI) =
 
   ui.tray.icon.status_icon_set_visible(true)
 
-  discard ui.tray.icon.g_signal_connect("activate", G_CALLBACK(
+  ui.tray.icon.on_signal("activate", G_CALLBACK(
     proc(status_icon: PStatusIcon, ui: var UI) {.cdecl,gcsafe.} =
       if ui.panel.is_active():
         ui.panel.hide()
@@ -183,7 +190,7 @@ proc setup_tray(ui: var UI) =
     uiptr
   )
 
-  discard ui.tray.icon.g_signal_connect("popup_menu", G_CALLBACK(
+  ui.tray.icon.on_signal("popup_menu", G_CALLBACK(
     proc(status_icon: PStatusIcon, button: guint, activate_time: guint32, ui: ref UI) {.cdecl.} =
       ui.tray.menu.popup(nil, nil, status_icon_position_menu, status_icon, button, activate_time)
     ),
@@ -211,8 +218,8 @@ proc setup_panel(ui: var UI) =
   PContainer(ui.panel).add ui.table
 
   let uiptr = cast[pointer](ui.addr)
-  discard ui.panel.signal_connect("destroy",         SIGNAL_FUNC(destroy), uiptr)
-  discard ui.panel.signal_connect("focus_out_event", SIGNAL_FUNC(hide)   , uiptr)
+  ui.panel.on_signal("destroy",         SIGNAL_FUNC(destroy), uiptr)
+  ui.panel.on_signal("focus_out_event", SIGNAL_FUNC(hide)   , uiptr)
 
 proc timer_proc(ui: var UI): gboolean {.cdecl,gcsafe.} =
   if ui.next_update.isSome:

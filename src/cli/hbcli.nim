@@ -5,10 +5,8 @@ import
     sequtils,
     tables
   ],
-  ./[
-    hbflags,
-    hbapi
-  ]
+  ../api/hbapi,
+  ../hbflags
 
 const USAGE_MESSAGE = """
 Usage: hb [flags] [accessory] [key] [value]
