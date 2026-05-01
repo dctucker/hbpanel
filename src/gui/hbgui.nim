@@ -33,7 +33,10 @@ type
     api: API
     timer: guint
     panel: PWindow
+    vbox: PBox
+    hbox: PBox
     table: PTable
+    quit_button: PWidget
     buttons: seq[PWidget]
     dragging: ptr Accessory
     dragged: bool
@@ -65,13 +68,15 @@ proc on_signal(obj: PGObject, sig: cstring, fn: TGCallback, data: gpointer) =
   if g_signal_connect(obj, sig, fn, data) == 0:
     stderr.write "Unable to connect signal " & $sig & "\n"
 
-
-proc light_button(accessory: var Accessory): PButton =
-  var button = button_new(accessory.light_label())
+proc disable_focus(widget: PWidget) =
   var value: TGValue
   var pvalue: PGValue
   pvalue = value.addr.init(G_TYPE_BOOLEAN)
-  button.set_property("can-focus", pvalue)
+  widget.set_property("can-focus", pvalue)
+
+proc light_button(accessory: var Accessory): PButton =
+  var button = button_new(accessory.light_label())
+  button.disable_focus()
   PWidget(button).add_events(gint(BUTTON_PRESS_MASK + POINTER_MOTION_MASK + BUTTON_RELEASE_MASK))
 
   button.on_signal("button-press-event", SIGNAL_FUNC(
@@ -197,29 +202,44 @@ proc setup_tray(ui: var UI) =
     uiptr
   )
 
+proc add_to(widget: PWidget, container: PContainer) =
+  container.add widget
+
 proc setup_panel(ui: var UI) =
   ui.panel = window_new(WINDOW_TOPLEVEL)
   ui.panel.set_skip_taskbar_hint(true)
   ui.panel.set_resizable(false)
   ui.panel.set_decorated(false)
   ui.panel.set_title(title)
-  ui.panel.set_border_width(10)
+  ui.panel.set_border_width 4
 
-  ui.table = table_new((1 + ui.buttons.len.guint) div 2, 2, true)
-  ui.table.set_row_spacings(8)
-  ui.table.set_col_spacings(8)
-  var i, j: guint
-  for button in ui.buttons:
-    ui.table.attach_defaults(button, j, j+1, i, i+1)
-    j += 1
-    if j >= 2:
-      j = 0
-      i += 1
-  PContainer(ui.panel).add ui.table
+  ui.vbox = vbox_new(false, 4)
+  block:
+    var hbox = hbox_new(false, 0)
+    ui.hbox = hbox
+    block:
+      ui.quit_button = button_new("✕")
+      ui.quit_button.on_signal("clicked", SIGNAL_FUNC(destroy), ui.addr)
+      ui.quit_button.set_size_request(28, 28)
+      ui.quit_button.disable_focus
+      ui.hbox.pack_end ui.quit_button, false, false, 0
+    ui.hbox.add_to ui.vbox
 
-  let uiptr = cast[pointer](ui.addr)
-  ui.panel.on_signal("destroy",         SIGNAL_FUNC(destroy), uiptr)
-  ui.panel.on_signal("focus_out_event", SIGNAL_FUNC(hide)   , uiptr)
+    ui.table = table_new((1 + ui.buttons.len.guint) div 2, 2, true)
+    ui.table.set_row_spacings 8
+    ui.table.set_col_spacings 8
+    var i, j: guint
+    for button in ui.buttons:
+      ui.table.attach_defaults(button, j, j+1, i, i+1)
+      j += 1
+      if j >= 2:
+        j = 0
+        i += 1
+    ui.table.add_to ui.vbox
+  ui.vbox.add_to ui.panel
+
+  ui.panel.on_signal("destroy",         SIGNAL_FUNC(destroy), ui.addr)
+  ui.panel.on_signal("focus_out_event", SIGNAL_FUNC(hide)   , ui.addr)
 
 proc timer_proc(ui: var UI): gboolean {.cdecl,gcsafe.} =
   if ui.next_update.isSome:
