@@ -1,12 +1,11 @@
 import ./[
-  hbcli, hbgui
+  hbflags, hbcli, hbgui
 ]
 
 when isMainModule:
-  var cli: CLI
-  cli.setup()
+  let flags = newFlags()
 
-  if cli.tray or cli.panel:
-    gui_main(cli)
+  if flags.tray or flags.panel:
+    quit gui_main(flags)
   else:
-    quit(cli.main())
+    quit cli_main(flags)

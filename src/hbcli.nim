@@ -6,8 +6,8 @@ import
     tables
   ],
   ./[
-    hbapi,
-    flags
+    hbflags,
+    hbapi
   ]
 
 const USAGE_MESSAGE = """
@@ -29,8 +29,11 @@ ENVIRONMENT VARIABLES
 """
 
 type
-  CLI* = object of Flags
+  CLI* = object
+    flags: Flags
     api: API
+
+proc args(cli: CLI): Args = cli.flags.args
 
 proc find(haystack: Accessories, needle: string): ptr Accessory =
   for accessory in haystack:
@@ -46,7 +49,7 @@ proc list(cli: CLI, accessories: Accessories) =
   let len_1 = accessories.map(proc(a: Accessory): int = a.serviceName.len).max
   for accessory in accessories:
     stdout.write accessory.serviceName.alignString(len_1)
-    if cli.verbose:
+    if cli.flags.verbose:
       stdout.write "  (", accessory.humanType, ")"
       stdout.write " ", accessory.uniqueId
     stdout.write "\n"
@@ -55,7 +58,7 @@ proc list(cli: CLI, services: seq[ServiceChar]) =
   #let len_1 = services.map(proc(s: ServiceChar): int = s.`type`.len).max
   for service in services:
     stdout.write service.`type`
-    if cli.verbose:
+    if cli.flags.verbose:
       stdout.write " = ", $service.value
     stdout.write "\n"
 
@@ -111,13 +114,24 @@ proc do_usage(cli: CLI): int =
   echo USAGE_MESSAGE
   return 2
 
-export setup
+proc newCLI(flags: Flags): CLI =
+  result.flags = flags
+  if flags.tray:
+    stderr.write "not supported in CLI mode: --tray\n"
+  elif flags.panel:
+    stderr.write "not supported in CLI mode: --panel\n"
+  else:
+    result.api = newAPI()
 
-proc main*(cli: var CLI): int =
-  cli.api = newAPI()
-  if cli.usage:
+proc cli_main*(flags: Flags): int =
+  var cli = newCLI(flags)
+  if cli.flags.tray or cli.flags.panel:
+    return 2
+  if cli.flags.usage:
     return cli.do_usage()
-  if cli.layout:
+  if cli.flags.layout:
     return cli.do_layout()
-  if cli.list:
-    return cli.do_list()
+  return cli.do_list()
+
+when isMainModule:
+  quit cli_main(newFlags())

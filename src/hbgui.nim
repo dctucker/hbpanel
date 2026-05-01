@@ -2,7 +2,7 @@ import
   ./[
     icon,
     hbapi,
-    flags
+    hbflags
   ],
   glib2,
   gtk2,
@@ -236,11 +236,17 @@ proc setup(ui: var UI) =
   if ui.flags.panel:
     ui.show_panel()
 
-proc gui_main*(flags: Flags) =
-  ui.flags = flags
+proc newUI(flags: Flags): UI =
+  result.flags = flags
+  result.api = newAPI()
+
+proc gui_main*(flags: Flags): int =
+  ui = newUI(flags)
   nim_init()
-  ui.api = newAPI()
   let accessories = ui.api.fetch_accessories()
   ui.set_accessories(accessories)
   ui.setup()
   main()
+
+when isMainModule:
+  quit gui_main(newFlags())

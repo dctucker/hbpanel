@@ -78,8 +78,8 @@ proc update*(accessory: var Accessory, updated_accessory: Accessory) =
   accessory.values = updated_accessory.values
 
 
-const token_dir = getCacheDir("hbpanel")
-const token_file = token_dir / "token.json"
+proc token_dir(): string = getCacheDir("hbpanel")
+proc token_file(): string = token_dir() / "token.json"
 
 proc newAPI*: API =
   const host = getEnv("HB_HOST", "homebridge.local")
@@ -98,8 +98,8 @@ proc call(api: API, mtd: HttpMethod, endpoint: string, data: string = ""): Respo
 
 proc read_token_cache*(api: API): bool =
   try:
-    createDir(token_dir)
-    let token_json = readFile(token_file).parseJson()
+    token_dir().createDir()
+    let token_json = token_file().readFile().parseJson()
     let access_token = token_json["access_token"].getStr()
     api.headers["Authorization"] = "Bearer " & access_token
     return true
@@ -116,7 +116,7 @@ proc auth_login*(api: API): bool =
     }
   ))
   if response.code.is2xx:
-    writeFile(token_file, response.body)
+    token_file().writeFile(response.body)
     return api.read_token_cache()
   else:
     stderr.write response.code, "\n"

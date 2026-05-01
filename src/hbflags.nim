@@ -3,7 +3,7 @@ import std/parseopt
 type
   Args* = tuple
     accessory, service, value: string
-  Flags* = object of RootObj
+  Flags* = object
     list*, layout*, panel*, tray*, verbose*, usage*: bool
     args*: Args
 
@@ -12,7 +12,7 @@ converter toArgs*(args: seq[string]): Args =
   if args.len > 1: result.service = args[1]
   if args.len > 2: result.value = args[2]
 
-proc setup*(flags: var Flags) =
+proc newFlags*: Flags =
   var args: seq[string]
   var p = initOptParser()
   for kind, key, value in p.getOpt():
@@ -22,18 +22,17 @@ proc setup*(flags: var Flags) =
     of cmdShortOption, cmdLongOption:
       case key
       of "h", "help":
-        flags.usage = true
+        result.usage = true
       of "l", "list":
-        flags.list = true
+        result.list = true
       of "L", "layout":
-        flags.layout = true
+        result.layout = true
       of "p", "panel":
-        flags.panel = true
+        result.panel = true
       of "t", "tray":
-        flags.tray = true
+        result.tray = true
       of "v", "verbose":
-        flags.verbose = true
+        result.verbose = true
     of cmdEnd:
       assert(false)
-  flags.list = true
-  flags.args = args
+  result.args = args
