@@ -2,9 +2,11 @@ import
   ../api/hbapi,
   ../hbflags,
   ./icon,
+  cairo,
   glib2,
   gtk2,
   gdk2pixbuf,
+  gdk2,
   std/[
     json,
     options
@@ -17,8 +19,10 @@ from gdk2 import
   TScreen,
   TRectangle,
   PEventFocus,
+  PEventExpose,
   PEventButton,
   PEventMotion,
+  EXPOSURE_MASK,
   BUTTON_PRESS_MASK,
   BUTTON_RELEASE_MASK,
   POINTER_MOTION_MASK
@@ -32,7 +36,7 @@ type
     flags: Flags
     api: API
     timer: guint
-    panel: PWindow
+    panel: gtk2.PWindow
     vbox: PBox
     hbox: PBox
     table: PTable
@@ -74,10 +78,33 @@ proc disable_focus(widget: PWidget) =
   pvalue = value.addr.init(G_TYPE_BOOLEAN)
   widget.set_property("can-focus", pvalue)
 
-proc light_button(accessory: var Accessory): PButton =
-  var button = button_new(accessory.light_label())
-  button.disable_focus()
-  PWidget(button).add_events(gint(BUTTON_PRESS_MASK + POINTER_MOTION_MASK + BUTTON_RELEASE_MASK))
+const gtklib = "libgtk-x11-2.0.so(|.0)"
+proc get_window*(widget: PWidget): gtk2.PWindow {.cdecl, dynlib: gtklib, importc: "gtk_widget_get_window".}
+
+proc light_button(accessory: var Accessory): PWidget =
+  var button = button_new()
+  button.add_events (EXPOSURE_MASK + BUTTON_PRESS_MASK + POINTER_MOTION_MASK + BUTTON_RELEASE_MASK).gint
+  button.set_size_request(100, 80)
+
+  button.on_signal("expose-event", SIGNAL_FUNC(
+    proc(widget: PWidget, event: PEventExpose, accessory: var Accessory): gboolean {.cdecl.} =
+      var win = DRAWABLE(widget.get_window())
+      var cr = win.cairo_create()
+      #let label = accessory.light_label()
+      #var win = PDrawable(widget.window)
+      #let gc = widget.style.fg_gc[widget.state]
+      #win.line(gc, 0.gint, 20.gint, 20.gint, 30.gint)
+
+      #let display = widget.get_display()
+      #let font = display.font_from_description_for_display(widget.style.font_desc)
+      #win.text(font, gc, 0.gint, 10.gint, label, label.len.gint)
+
+      cr.move_to(20, 20)
+      cr.show_text(accessory.light_label())
+      cr.destroy()
+    ),
+    accessory.addr
+  )
 
   button.on_signal("button-press-event", SIGNAL_FUNC(
     proc(widget: PWidget, event: PEventButton, accessory: var Accessory): bool {.cdecl.} =
@@ -140,15 +167,15 @@ proc set_accessories*(ui: var UI, a: Accessories) =
       continue
     ui.buttons.add light_button(accessory)
 
-proc hide(window: PWindow, event: PEventFocus, ui: ref UI) {.cdecl.} =
+proc hide(window: gtk2.PWindow, event: PEventFocus, ui: ref UI) {.cdecl.} =
   ui.panel.hide()
   if ui.flags.panel:
     main_quit()
 
-proc rect(tray: Tray): TRectangle =
+proc rect(tray: Tray): gdk2.TRectangle =
   var
     scn: gdk2.TScreen
-    rect: TRectangle
+    rect: gdk2.TRectangle
     ori: TOrientation
   discard tray.icon.status_icon_get_geometry(scn.addr, rect.addr, ori.addr)
   return rect
@@ -186,7 +213,7 @@ proc setup_tray(ui: var UI) =
 
       var
         width, height: gint
-        rect: TRectangle = ui.tray.rect()
+        rect = ui.tray.rect()
 
       ui.show_panel()
       ui.panel.get_size(width.addr, height.addr)
@@ -251,7 +278,7 @@ proc timer_proc(ui: var UI): gboolean {.cdecl,gcsafe.} =
   return true
 
 proc setup_timer(ui: var UI) =
-  ui.timer = timeout_add(500, cast[TFunction](timerproc), ui.addr)
+  ui.timer = timeout_add(500, cast[gtk2.TFunction](timerproc), ui.addr)
 
 proc setup(ui: var UI) =
   ui.setup_panel()
